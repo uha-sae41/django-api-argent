@@ -1,0 +1,21 @@
+version: "3"
+services:
+  www:
+    image: nginx:latest
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:rw
+    ports:
+      - 8002:80
+  django:
+    build:
+      context: .
+      dockerfile: Dockerfile
+  mariadb:
+    image: mariadb:latest
+    restart: always
+    environment:
+      MARIADB_ROOT_PASSWORD: X!AqAuHrDxB5u^q@C*@3Mp^cq^EdsMgx%w*Q*@@6Nt^m*CSHgHr80dGM9cvTBhNB
+    ports:
+      - 3306:3306
+    volumes:
+      - /docker/data/mariadb_argent:/var/lib/mysql
