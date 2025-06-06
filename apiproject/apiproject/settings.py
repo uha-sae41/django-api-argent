@@ -131,3 +131,19 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+#REST_FRAMEWORK = {
+#    'DEFAULT_AUTHENTICATION_CLASSES': [
+#        'rest_framework.authentication.TokenAuthentication',
+#    ],
+#}
+# Ajoutez ceci à votre settings.py
+
+AUTH_API_URL = 'http://127.0.0.1:8000/api/validate-token/'
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'apiargent.authentication.ExternalTokenAuthentication',
+        'rest_framework.authentication.TokenAuthentication',  # Garder comme fallback
+    ],
+}

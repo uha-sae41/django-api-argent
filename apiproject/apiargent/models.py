@@ -1,7 +1,7 @@
 from django.db import models
 
 class Account(models.Model):
-    user_id = models.IntegerField(unique=True, verbose_name="ID de l'utilisateur")
+    user_id = models.IntegerField(verbose_name="ID de l'utilisateur")
     solde = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, verbose_name="Solde du compte")
     date_creation = models.DateTimeField(auto_now_add=True, verbose_name="Date de création du compte")
     type_compte = models.CharField(max_length=50, verbose_name="Type de compte", choices=[
