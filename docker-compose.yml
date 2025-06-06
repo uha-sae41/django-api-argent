@@ -16,6 +16,6 @@ services:
     environment:
       MARIADB_ROOT_PASSWORD: X!AqAuHrDxB5u^q@C*@3Mp^cq^EdsMgx%w*Q*@@6Nt^m*CSHgHr80dGM9cvTBhNB
     ports:
-      - 3306:3306
+      - 33060:3306
     volumes:
       - /docker/data/mariadb_argent:/var/lib/mysql
