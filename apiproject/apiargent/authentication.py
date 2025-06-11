@@ -1,39 +1,44 @@
-from rest_framework import authentication
-from rest_framework import exceptions
 import requests
 import logging
 from django.conf import settings
+from django.core.cache import cache
+from rest_framework import authentication, exceptions
 
 logger = logging.getLogger(__name__)
 
 class ExternalTokenAuthentication(authentication.BaseAuthentication):
     def authenticate(self, request):
-        # Extraire le token de l'en-tête
         auth_header = request.META.get('HTTP_AUTHORIZATION')
         if not auth_header:
             return None
 
-        # Format attendu: "Token xxx" ou "Bearer xxx"
         parts = auth_header.split()
         if len(parts) != 2 or parts[0].lower() not in ('token', 'bearer'):
             return None
 
         token = parts[1]
-        logger.debug(f"Tentative d'authentification avec token: {token[:5]}...")
+        cache_key = f"auth_token_{token}"
+        user_data = cache.get(cache_key)
+
+        if user_data:
+            user = type('User', (), {
+                **user_data,
+                'is_authenticated': True,
+                'is_active': True,
+                '__str__': lambda self: str(self.user_id if hasattr(self, 'user_id') else 'Unknown')
+            })
+            return (user, token)
 
         try:
-            headers = {
-                'Authorization': f'Token {token}'
-            }
-
+            headers = {'Authorization': f'Token {token}'}
             response = requests.post(
-                'http://127.0.0.1:8000/api/validate-token/',
+                settings.AUTH_API_URL,
                 headers=headers,
                 timeout=5
             )
-
             if response.status_code == 200:
                 user_data = response.json()
+                cache.set(cache_key, user_data, timeout=300)  # 5 minutes
                 user = type('User', (), {
                     **user_data,
                     'is_authenticated': True,
