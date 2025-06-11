@@ -15,11 +15,29 @@ class PermissionSelfOrBanquier(permissions.BasePermission):
 
 class PermissionBanquier(permissions.BasePermission):
     def has_permission(self, request, view):
-        return request.user.role == 'banquier'
+        return request.user.role == 'banquier' or request.user.role == 'administrateur'
 
 class PermissionSelf(permissions.BasePermission):
     def has_permission(self, request, view):
         return request.user.id == view.kwargs.get('id')
+
+class PermissionSelfAccount(permissions.BasePermission):
+    def has_permission(self, request, view):
+        account_id = view.kwargs.get('id')
+        try:
+            account = Account.objects.get(pk=account_id)
+            return request.user.id == account.user_id
+        except Account.DoesNotExist:
+            return False
+
+class PermissionSelfAccountOrBanquier(permissions.BasePermission):
+    def has_permission(self, request, view):
+        account_id = view.kwargs.get('id')
+        try:
+            account = Account.objects.get(pk=account_id)
+            return request.user.id == account.user_id or request.user.role == 'banquier' or request.user.role == 'administrateur'
+        except Account.DoesNotExist:
+            return False
 
 class AccountView(APIView):
     def get(self, request, *args, **kwargs):
@@ -94,7 +112,6 @@ class AccountBalanceUpdateView(APIView):
         amount = Decimal(request.data.get("amount", 0))
 
         if action == "deposit":
-            account.solde += amount
             # Création d'un log pour le dépôt
             Log.objects.create(
                 account=account,
@@ -105,7 +122,6 @@ class AccountBalanceUpdateView(APIView):
             if account.solde < amount:
                 return Response({"res": "Insufficient funds"},
                                 status=status.HTTP_400_BAD_REQUEST)
-            account.solde -= amount
             # Création d'un log pour le retrait
             Log.objects.create(
                 account=account,
@@ -143,30 +159,8 @@ class AccountLogView(APIView):
             return Response({"res": "Compte introuvable"},
                             status=status.HTTP_404_NOT_FOUND)
 
-    """def post(self, request, id, *args, **kwargs):
-        try:
-            # Vérifier si le compte existe
-            account = Account.objects.get(pk=id)
-
-            data = {
-                "account": id,
-                "action": request.data.get("action"),
-                "montant": request.data.get("montant"),
-                "cible": request.data.get("cible"),
-            }
-
-            serializer = LogSerializer(data=data)
-            if serializer.is_valid():
-                serializer.save()
-                return Response(serializer.data, status=status.HTTP_201_CREATED)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-        except Account.DoesNotExist:
-            return Response({"res": "Compte introuvable"},
-                            status=status.HTTP_404_NOT_FOUND)"""
-
 class AccountVirementView(APIView):
-    permission_classes = [permissions.IsAuthenticated, PermissionSelf]
+    permission_classes = [permissions.IsAuthenticated, PermissionSelfAccountOrBanquier]
 
     def post(self, request, id, *args, **kwargs):
         source_account_id = id
@@ -189,10 +183,6 @@ class AccountVirementView(APIView):
 
             # Utiliser abs() pour garantir que le montant est positif (sécurité supplémentaire)
             amount = abs(amount)
-
-            # Effectuer le virement
-            source_account.solde -= amount
-            target_account.solde += amount
 
             # Enregistrer les logs pour les deux comptes
             Log.objects.create(
@@ -218,3 +208,96 @@ class AccountVirementView(APIView):
         except Account.DoesNotExist:
             return Response({"res": "One or both accounts do not exist"},
                             status=status.HTTP_404_NOT_FOUND)
+
+class PendingActionsView(APIView):
+    permission_classes = [permissions.IsAuthenticated, PermissionBanquier]
+
+    def get(self, request, *args, **kwargs):
+        pending_logs = Log.objects.filter(date_valeur__isnull=True).exclude(action="virement_recu").order_by('date_action')
+        serializer = LogSerializer(pending_logs, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+# il faut créer une classe qui répond à l'endpoint /api/validate-action/type/id et ou le type sera soit virement_envoye ; depot ; retrait et aura une fonction différente sur les comptes
+class ValidateActionView(APIView):
+    permission_classes = [permissions.IsAuthenticated, PermissionBanquier]
+
+    def post(self, request, id, *args, **kwargs):
+        try:
+            log = Log.objects.get(pk=id, date_valeur__isnull=True)
+        except Log.DoesNotExist:
+            return Response({"res": "Log not found or already processed"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        type_action = log.action
+
+        if type_action == "virement_envoye":
+            source_account = log.account
+            target_account = log.cible
+            amount = log.montant
+
+            # Vérifier que le solde du compte source est suffisant
+            if source_account.solde < amount:
+                return Response({"res": "Insufficient funds for the transfer"},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            # Effectuer le virement
+            source_account.solde -= amount
+            target_account.solde += amount
+
+            # Mettre à jour la date de valeur du log
+            log.date_valeur = log.date_action
+
+        elif type_action == "depot":
+            account = log.account
+            amount = log.montant
+
+            # Ajouter le montant au solde du compte
+            account.solde += amount
+
+            # Mettre à jour la date de valeur du log
+            log.date_valeur = log.date_action
+
+        elif type_action == "retrait":
+            account = log.account
+            amount = log.montant
+
+            # Vérifier que le solde du compte est suffisant
+            if account.solde < amount:
+                return Response({"res": "Insufficient funds for the withdrawal"},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+            # Retirer le montant du solde du compte
+            account.solde -= amount
+
+            # Mettre à jour la date de valeur du log
+            log.date_valeur = log.date_action
+
+        else:
+            return Response({"res": "Invalid action type"},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # Enregistrer les modifications dans la base de données
+        source_account.save()
+        target_account.save()
+        log.save()
+
+        return Response({"res": "Action validated successfully"}, status=status.HTTP_200_OK)
+
+# créer une classe qui va refuser les actions en attente et mettre comme date de valeur la 1ère date disponible par l'ordinateur
+class DeclineActionView(APIView):
+    permission_classes = [permissions.IsAuthenticated, PermissionBanquier]
+
+    def post(self, request, id, *args, **kwargs):
+        try:
+            log = Log.objects.get(pk=id, date_valeur__isnull=True)
+        except Log.DoesNotExist:
+            return Response({"res": "Log not found or already processed"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        # Mettre à jour la date de valeur du log avec la date actuelle
+        log.date_valeur = log.date_action
+
+        # Enregistrer les modifications dans la base de données
+        log.save()
+
+        return Response({"res": "Action refused and date set to current date"}, status=status.HTTP_200_OK)

@@ -29,6 +29,7 @@ class Log(models.Model):
     ])
     montant = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Montant de l'action")
     date_action = models.DateTimeField(auto_now_add=True, verbose_name="Date de l'action")
+    date_valeur = models.DateTimeField(null=True, blank=True, verbose_name="Date de valeur de l'action")
     cible = models.ForeignKey(Account, on_delete=models.SET_NULL, null=True, blank=True, related_name='logs_cible', verbose_name="Compte cible (pour les virements)")
     libele = models.CharField(max_length=255, null=True, blank=True, verbose_name="Libellé de l'action")
 
