@@ -6,4 +6,10 @@ urlpatterns = [
     path('api/', views.AccountView.as_view()),
     path("api/<int:id>/", views.AccountDetailView.as_view()),
     path("api/list/", views.UserAccountsView.as_view()),
+    path("api/list/<int:id>/", views.UserAccountsViewById.as_view()),
+    path("api/<int:id>/balance/update/", views.AccountBalanceUpdateView.as_view()),
+    path("api/<int:id>/logs/", views.AccountLogView.as_view()),
+    path("api/<int:id>/logs/<int:nombre>/", views.AccountLogView.as_view()),
+    #path("api/<int:id>/logs/<int:nombre>/<str:action>/", views.AccountLogView.as_view()),
+    path("api/<int:id>/virement/", views.AccountVirementView.as_view()),
 ]
