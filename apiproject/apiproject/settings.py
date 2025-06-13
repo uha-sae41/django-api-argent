@@ -83,7 +83,7 @@ DATABASES = {
         'NAME': "django_argent",
         "USER": "root",
         "PASSWORD": "X!AqAuHrDxB5u^q@C*@3Mp^cq^EdsMgx%w*Q*@@6Nt^m*CSHgHr80dGM9cvTBhNB",
-        "HOST": "192.168.69.1",
+        "HOST": "172.17.0.1",
         "PORT": "33060",
     }
 }
@@ -139,7 +139,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 #}
 # Ajoutez ceci à votre settings.py
 
-AUTH_API_URL = 'http://127.0.0.1:8000/api/validate-token/'
+AUTH_API_URL = 'http://172.17.0.1:8000/api/validate-token/'
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
