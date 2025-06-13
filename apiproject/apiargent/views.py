@@ -45,23 +45,7 @@ class AccountView(APIView):
         serializer = AccountSerializer(users, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-    def post(self, request, *args, **kwargs):
-        data = {
-            "user_id": request.data.get("user_id"),
-            "solde": request.data.get("solde"),
-            "date_creation": request.data.get("date_creation"),
-            "type_compte": request.data.get("type_compte"),
-            "statut": request.data.get("statut"),
-        }
-        serializer = AccountSerializer(data=data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-# créer une classe qui permet de lister les comptes de l'utilisateur connecté
 class UserAccountsView(APIView):
-    #authentication_classes = [TokenAuthentication]
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
@@ -71,12 +55,11 @@ class UserAccountsView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 class UserAccountsViewById(APIView):
-    #authentication_classes = [TokenAuthentication]
     permission_classes = [permissions.IsAuthenticated, PermissionBanquier]
 
     def get(self, request, id, *args, **kwargs):
         try:
-            accounts = Account.objects.filter(user_id=id)
+            accounts = Account.objects.filter(user_id=id).exclude(action="virement_recu")
         except Account.DoesNotExist:
             return Response({"res": "Object with id does not exist"},
                             status=status.HTTP_400_BAD_REQUEST)
@@ -85,8 +68,7 @@ class UserAccountsViewById(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 class AccountDetailView(APIView):
-    #authentication_classes = [TokenAuthentication]
-    permission_classes = [permissions.IsAuthenticated, PermissionSelfOrBanquier]
+    permission_classes = [permissions.IsAuthenticated, PermissionSelfAccountOrBanquier]
 
     def get(self, request, id, *args, **kwargs):
         try:
@@ -99,7 +81,7 @@ class AccountDetailView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 class AccountBalanceUpdateView(APIView):
-    permission_classes = [permissions.IsAuthenticated, PermissionSelf]
+    permission_classes = [permissions.IsAuthenticated, PermissionSelfAccount]
 
     def post(self, request, id, *args, **kwargs):
         try:
@@ -138,7 +120,7 @@ class AccountBalanceUpdateView(APIView):
 
 
 class AccountLogView(APIView):
-    permission_classes = [permissions.IsAuthenticated, PermissionSelf]
+    permission_classes = [permissions.IsAuthenticated, PermissionSelfAccountOrBanquier]
 
     def get(self, request, id, nombre=None, *args, **kwargs):
         try:
@@ -217,7 +199,6 @@ class PendingActionsView(APIView):
         serializer = LogSerializer(pending_logs, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
-# il faut créer une classe qui répond à l'endpoint /api/validate-action/type/id et ou le type sera soit virement_envoye ; depot ; retrait et aura une fonction différente sur les comptes
 class ValidateActionView(APIView):
     permission_classes = [permissions.IsAuthenticated, PermissionBanquier]
 
@@ -235,55 +216,55 @@ class ValidateActionView(APIView):
             target_account = log.cible
             amount = log.montant
 
-            # Vérifier que le solde du compte source est suffisant
             if source_account.solde < amount:
                 return Response({"res": "Insufficient funds for the transfer"},
                                 status=status.HTTP_400_BAD_REQUEST)
 
-            # Effectuer le virement
             source_account.solde -= amount
             target_account.solde += amount
 
-            # Mettre à jour la date de valeur du log
             log.date_valeur = log.date_action
 
         elif type_action == "depot":
             account = log.account
             amount = log.montant
 
-            # Ajouter le montant au solde du compte
             account.solde += amount
 
-            # Mettre à jour la date de valeur du log
             log.date_valeur = log.date_action
 
         elif type_action == "retrait":
             account = log.account
             amount = log.montant
 
-            # Vérifier que le solde du compte est suffisant
             if account.solde < amount:
                 return Response({"res": "Insufficient funds for the withdrawal"},
                                 status=status.HTTP_400_BAD_REQUEST)
 
-            # Retirer le montant du solde du compte
             account.solde -= amount
 
-            # Mettre à jour la date de valeur du log
             log.date_valeur = log.date_action
 
         else:
             return Response({"res": "Invalid action type"},
                             status=status.HTTP_400_BAD_REQUEST)
 
-        # Enregistrer les modifications dans la base de données
-        source_account.save()
-        target_account.save()
+        try:
+            source_account.save()
+        except:
+            pass
+        try:
+            target_account.save()
+        except:
+            pass
+        try:
+            account.save()
+        except:
+            pass
         log.save()
 
         return Response({"res": "Action validated successfully"}, status=status.HTTP_200_OK)
 
-# créer une classe qui va refuser les actions en attente et mettre comme date de valeur la 1ère date disponible par l'ordinateur
 class DeclineActionView(APIView):
     permission_classes = [permissions.IsAuthenticated, PermissionBanquier]
 
@@ -294,10 +275,53 @@ class DeclineActionView(APIView):
             return Response({"res": "Log not found or already processed"},
                             status=status.HTTP_404_NOT_FOUND)
 
-        # Mettre à jour la date de valeur du log avec la date actuelle
         log.date_valeur = log.date_action
 
-        # Enregistrer les modifications dans la base de données
         log.save()
 
         return Response({"res": "Action refused and date set to current date"}, status=status.HTTP_200_OK)
+
+class ChangeAccountStateView(APIView):
+    permission_classes = [permissions.IsAuthenticated, PermissionBanquier]
+
+    def post(self, request, id, *args, **kwargs):
+        try:
+            account = Account.objects.get(pk=id)
+        except Account.DoesNotExist:
+            return Response({"res": "Account not found"},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        new_state = request.data.get("etat")
+        if new_state not in ['actif', 'fermé']:
+            return Response({"res": "Invalid account type"},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        account.statut = new_state
+        account.save()
+
+        serializer = AccountSerializer(account)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class ListCreatedProcessAccountsView(APIView):
+    permission_classes = [permissions.IsAuthenticated, PermissionBanquier]
+
+    def get(self, request, *args, **kwargs):
+        accounts = Account.objects.filter(statut='en_creation')
+        serializer = AccountSerializer(accounts, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class RequestNewAccountView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, *args, **kwargs):
+        user_id = request.user.id
+        data = {
+            "user_id": user_id,
+            "type_compte": request.data.get("type_compte"),
+            "statut": 'en_creation'
+        }
+        serializer = AccountSerializer(data=data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

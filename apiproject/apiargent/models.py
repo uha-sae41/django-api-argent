@@ -10,7 +10,8 @@ class Account(models.Model):
     ], default='courant')
     statut = models.CharField(max_length=20, verbose_name="Statut du compte", choices=[
         ('actif', 'Actif'),
-        ('fermé', 'Fermé')
+        ('fermé', 'Fermé'),
+        ('en_creation', 'En cours de création'),
     ], default='actif')
 
     def __str__(self):
